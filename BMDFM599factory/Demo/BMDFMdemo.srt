@@ -1,0 +1,347 @@
+1
+00:00:01,000 --> 00:00:12,000
+Hi everyone, welcome to the demo where we will be looking at parallel processing on multicore computers using Binary Modular Dataflow Machine, or BMDFM for short.
+
+2
+00:00:13,000 --> 00:00:22,000
+Now, let me start with a spoiler. This demo is going to show you how we can run applications implicitly on all available processor cores in parallel.
+
+3
+00:00:23,000 --> 00:00:31,000
+At the end of this demo you will see how we can run these applications in parallel using the dataflow machine speeding up execution time of the application.
+
+4
+00:00:32,000 --> 00:00:38,000
+So, don't drop here, continue watching, and we will proceed to go through the entire demo step by step.
+
+5
+00:00:39,000 --> 00:00:47,000
+At first, let's talk about some background for this topic. Today's multiprocessor computers can have hundreds upon thousands of processor cores
+
+6
+00:00:47,000 --> 00:00:55,000
+for high performance parallel processing and are intended to exploit a thread-level parallelism identified by software.
+
+7
+00:00:56,000 --> 00:01:03,000
+Thus, the most challenging task is to find the most efficient way to harness all the available power.
+
+8
+00:01:04,000 --> 00:01:15,000
+Existent OpenMP paradigm with static parallelization, which uses a fork-join runtime library, works good for loop-intensive regular array-based computations,
+
+9
+00:01:15,000 --> 00:01:24,000
+however, compile-time parallelization methods are weak in general and almost inapplicable for irregular applications:
+
+10
+00:01:25,000 --> 00:01:34,000
+- There are many operations that take a non-deterministic amount of time making it difficult to know exactly when certain pieces of data will become available.
+
+11
+00:01:35,000 --> 00:01:41,000
+- A memory hierarchy with multi-level caches has unpredictable memory access latencies.
+
+12
+00:01:42,000 --> 00:01:50,000
+- Compile-time inter-procedural and cross-conditional optimizations are hard and very often impossible because compilers cannot figure out
+
+13
+00:01:51,000 --> 00:01:55,000
+which way a conditional will go or cannot optimize across a function call.
+
+14
+00:01:56,000 --> 00:02:05,000
+In this demo, we will look at Binary Modular Dataflow Machine, which allows one running an application in parallel using multiple processor cores
+
+15
+00:02:06,000 --> 00:02:08,000
+to speed up the execution of single application.
+
+16
+00:02:09,000 --> 00:02:14,000
+All right, let's go to the demo and see how everything works on a real example.
+
+17
+00:02:15,000 --> 00:02:20,000
+For our demo, we use a Windows desktop where we are connected to a 64-core Linux server.
+
+17
+00:02:21,000 --> 00:02:26,000
+We have 3 terminals connected to the same Linux box showing different information.
+
+18
+00:02:27,000 --> 00:02:35,000
+The terminal on top is running "htop" utility showing the load for all 64 cores. We can see that all cores are in idle states,
+
+19
+00:02:36,000 --> 00:02:41,000
+and we do not have tasks running on the server. It also shows which processes are running there.
+
+20
+00:02:42,000 --> 00:02:46,000
+Mainly, we will work on the terminal that is on bottom-right part of our desktop.
+
+21
+00:02:47,000 --> 00:02:56,000
+Firstly, we look at processor information. This is 4 Opteron 2.3GHz processors having 64-cores in total. Actually, this is a good machine for our demo,
+
+22
+00:02:57,000 --> 00:03:04,000
+even those is almost 8 years old, it is important to have multiple cores rather than performance of a single core.
+
+23
+00:03:05,000 --> 00:03:12,000
+We will use a terminal on bottom-left running "Midnight Commander" for convenience when we need to copy files from one directory to another.
+
+24
+00:03:13,000 --> 00:03:23,000
+Now, if you wondering where can one get BMDFM. It can be downloaded from multiple software repositories on the Internet.
+
+25
+00:03:24,000 --> 00:03:29,000
+You can also download BMDFM directly from download page on the official site.
+
+26
+00:03:30,000 --> 00:03:33,000
+There is also a nice wiki page.
+
+27
+00:03:34,000 --> 00:03:40,000
+Documentation can also be obtained using the PDF download.
+
+28
+00:03:41,000 --> 00:03:43,000
+Ok, let's proceed with our demo.
+
+29
+00:03:44,000 --> 00:03:51,000
+At first, we'll create a temporary "Test" folder where we'll have downloaded BMDFM tarball.
+
+30
+00:03:52,000 --> 00:03:56,000
+You can see it's already here in red.
+
+31
+00:03:57,000 --> 00:04:01,000
+Now, let's extract the file.
+
+32
+00:04:02,000 --> 00:04:19,000
+And rename the extracted directory to something shorter, just BMDFM for our convenience.
+
+33
+00:04:20,000 --> 00:04:27,000
+Because we have many subdirectories for many architectures like x86, SPARC, POWER, MIPS, ARM and so forth,
+
+34
+00:04:28,000 --> 00:04:42,000
+we create a link that our "Bin" directory will be pointing to the right architecture. In our case, it will be x86-64.
+
+35
+00:04:43,000 --> 00:04:57,000
+Now, we list all the files here,
+
+36
+00:04:58,000 --> 00:05:11,000
+create our symlink.
+
+37
+00:05:12,000 --> 00:05:14,000
+You can see it's created here.
+
+38
+00:05:15,000 --> 00:05:21,000
+Now finally, when everything is downloaded, copied, extracted and the link to "Bin" directory is set correctly,
+
+39
+00:05:22,000 --> 00:05:27,000
+we can see all necessary BMDFM files in a single "Bin" directory.
+
+39
+00:05:28,000 --> 00:05:30,000
+Perfect.
+
+40
+00:05:31,000 --> 00:05:36,000
+For our test, we calculate Pi using the Chudnovsky Algorithm.
+
+41
+00:05:37,000 --> 00:05:43,000
+This algorithm is considered to be the most precise one among others though requires a large amount of computations.
+
+42
+00:05:44,000 --> 00:05:50,000
+In this PDF file, which is also available on the Internet, we can see computation formula for Pi number calculation,
+
+43
+00:05:51,000 --> 00:05:59,000
+which is already coded for BMDFM without applying any code optimizations - just one to one like it is written in the formula itself.
+
+44
+00:06:00,000 --> 00:06:07,000
+We will try to run exactly this unoptimized code on a single core and on all 64 available cores comparing execution times.
+
+45
+00:06:08,000 --> 00:06:12,000
+Important point is that we do not use any special directives for parallel processing.
+
+46
+00:06:13,000 --> 00:06:22,000
+Dataflow machine should be able to identify all parallelism automatically and run this single application in parallel on all available cores.
+
+47
+00:06:23,000 --> 00:06:30,000
+One thing to note here. We're dealing with a case of irregular parallelism because all operations have different computational weights.
+
+48
+00:06:31,000 --> 00:06:41,000
+Runtime parallelism is available between all operations executed within one iteration as well as many iterations executed in parallel.
+
+49
+00:06:42,000 --> 00:06:51,000
+In order to run many iterations in parallel, BMDFM automatically assigns an individual context to each variable that is processed in many iterations in parallel
+
+50
+00:06:52,000 --> 00:06:58,000
+before adding variables dynamically as nodes to the dataflow computation graph.
+
+51
+00:06:59,000 --> 00:07:09,000
+Because Pi is computed with high precision (100000 digits in our test), we use the standard famous Multiple Precision Arithmetic Library, or GMP,
+
+52
+00:07:10,000 --> 00:07:12,000
+that is available publicly on the Internet.
+
+53
+00:07:13,000 --> 00:07:19,000
+GMP library provides a set of arithmetic operations working with numbers of arbitrary precision.
+
+54
+00:07:20,000 --> 00:07:28,000
+BMDFM already has a GMP wrapper written in C for GMP functions that it can call GMP library directly from the dataflow machine.
+
+55
+00:07:29,000 --> 00:07:38,000
+Similarly, a user can wrap any required function or library using BMDFM open C-interface, thus extending it with new functionality.
+
+56
+00:07:39,000 --> 00:07:42,000
+So, what do we do next? We would like to configure our dataflow machine.
+
+57
+00:07:43,000 --> 00:07:47,000
+We modify the configuration profile where we change the following parameters:
+
+58
+00:07:48,000 --> 00:08:00,000
+- Size of shared memory we want to use. We would like to configure 64GB having 100 memory banks with parallel access, thus 640MB per memory bank.
+
+59
+00:08:01,000 --> 00:08:12,000
+- We configure the number of parallel virtual processors that is recommended to set equal or doubled to the number of real cores. In our example, we set them to 128.
+
+60
+00:08:13,000 --> 00:08:18,000
+- We also configure to run multiple threads instead of running multiple processes by default.
+
+61
+00:08:19,000 --> 00:08:29,000
+Multiple threads give advantages when using real shared memory compared to multiple processes that might run faster on distributed shared memory.
+
+62
+00:08:30,000 --> 00:08:40,000
+We've used terminal with "Midnight Commander". We copy available source code of GMP wrapper to our "Bin" directory. GMP wrapper code wraps each GMP function.
+
+63
+00:08:41,000 --> 00:08:49,000
+We also modify our Makefile adding a linker option to tell the linker that BMDFM should be linked against the GMP library.
+
+64
+00:08:50,000 --> 00:08:56,000
+And finally, we complete the configuration by starting "make" building BMDFM against the GMP library.
+
+65
+00:08:57,000 --> 00:09:03,000
+Now, going back to the "Midnight Commander" shell window, we copy our test program to the "Bin" directory.
+
+66
+00:09:04,000 --> 00:09:10,000
+We modify our test slightly adding a simple print of iteration steps to see a kind of progress during the test run.
+
+67
+00:09:11,000 --> 00:09:29,000
+At first, we start our test on a single core. Terminal on top shows that only one core is loaded with the task. We see the progress and it seems that it takes quite a while.
+
+68
+00:09:30,000 --> 00:09:36,000
+We had to skip around 8 minutes of this video while running the test and we jump to the moment of time when the test is coming up to its completion.
+
+69
+00:09:37,000 --> 00:09:46,000
+Ok. As we can see it took around 10.75 minutes (about 644 seconds) according to the time measurements shown on the terminal.
+
+70
+00:09:47,000 --> 00:09:49,000
+Please, note again that our test was running on a single core.
+
+71
+00:09:50,000 --> 00:09:58,000
+Now, let's run the same test but this time powered by the multi-threaded dataflow engine of BMDFM.
+
+72
+00:09:59,000 --> 00:10:18,000
+At first, we start BMDFM server in interactive mode.
+
+73
+00:10:19,000 --> 00:10:31,000
+From the server console, we can check our configuration: the number of started processes and the size of shared memory pool.
+
+74
+00:10:32,000 --> 00:10:38,000
+All started BMDFM server processes with their threads can also be seen on our top terminal.
+
+75
+00:10:39,000 --> 00:10:56,000
+We quit the server and restart it again, this time as a daemon.
+
+76
+00:10:57,000 --> 00:11:23,000
+Then we run the test itself and we can see that all our cores are fully loaded with computations.
+
+77
+00:11:24,000 --> 00:11:28,000
+We re-run our test a couple of times and we observe that our next runs are even a bit faster.
+
+78
+00:11:29,000 --> 00:11:49,000
+This happens because shared memory pages are allocated and cached in RAM using on-demand policy.
+
+79
+00:11:50,000 --> 00:11:58,000
+Note that when the test runs on all 64 cores we are even a bit faster than 64 times compared to the same test running on a single core.
+
+80
+00:11:59,000 --> 00:12:01,000
+This may be different on various machines.
+
+80
+00:12:02,000 --> 00:12:11,000
+On this machine, maybe it can be explained as a better use of all CPU caches when the test runs on all cores compared to the run on a single core.
+
+81
+00:12:12,000 --> 00:12:16,000
+All right. Now, we are done with our tests. We stop the server.
+
+82
+00:12:17,000 --> 00:12:36,000
+We conclude that BMDFM is capable of running applications in parallel on multicore computers. Parallelism that is implicitly available in the application code is detected and efficiently exploited at runtime by the multithreaded dataflow layer of BMDFM. No directives for parallel execution are required.
+
+83
+00:12:37,000 --> 00:13:00,000
+BMDFM software layer is intended to use in a role of the parallel runtime engine able to run irregular applications automatically in parallel. Due to the transparent dataflow semantics on top, BMDFM is a simple parallelization technique for application programmers and, at the same time, it is a much better parallel programming and compiling technology for multicore shared memory computers.
+
+84
+00:13:01,000 --> 00:13:04,000
+This ends our demo. Thank you very much for watching.

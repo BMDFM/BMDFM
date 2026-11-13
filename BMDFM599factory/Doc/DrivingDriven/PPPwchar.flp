@@ -1,0 +1,436 @@
+# PPPwchar.flp
+# Parallel PreProcessor by Sancho Mining.
+
+# Two types of macros are preprocessed:
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#   USE CASE 0: Single-threaded invocation of an asynchronous UDF returning 0.
+#   ~~~~~~~~~~~
+#      (UDF arg0'wr arg1'rd arg2'wr arg3'rd)  # multiple wr/rd args allowed
+#    ==>
+#      (progn
+#        (setq sync_arg0
+#          (UDF (| sync_arg0 arg0) arg1 (| sync_arg2 arg2) arg3)
+#        )
+#        (setq sync_arg1 sync_arg0)
+#        (setq sync_arg2 sync_arg0)
+#        (setq sync_arg3 sync_arg0)
+#        (setq arg0 (| sync_arg0 arg0))
+#        (setq arg2 (| sync_arg2 arg2))
+#        sync_arg0
+#      )
+#
+#   USE CASE 1: Multithreaded invocation of an asynchronous UDF returning 0.
+#   ~~~~~~~~~~~
+#      (UDF'par arg0'wr arg1'rd arg2'wr arg3'rd)  # multiple wr/rd args allowed
+#    ==>
+#      (progn
+#        (setq arg0 (| sync_arg0 arg0))
+#        (setq arg2 (| sync_arg2 arg2))
+#        (for thread 1 1 threads
+#          (setq sync_arg0 (| sync_arg0
+#            (UDF (-- thread) threads arg0 arg1 arg2 arg3)  # interleaved
+#          ))                                               # args first
+#        )
+#        (setq sync_arg1 sync_arg0)
+#        (setq sync_arg2 sync_arg0)
+#        (setq sync_arg3 sync_arg0)
+#        (setq arg0 (| sync_arg0 arg0))
+#        (setq arg2 (| sync_arg2 arg2))
+#        sync_arg0
+#      )
+
+(defun remove_comments (progn
+  (setq temp (wcat $1 (w "\n")))
+  (setq flag 1)
+  (setq info (w ""))
+  (while (setq i (wat (w "\n") temp)) (progn
+    (setq l (wlen (setq temp2 (walltrim (wleft temp i)))))
+    (setq temp (wrightl temp i))
+    (if (wat (w "#") temp2)
+      (progn
+        (setq i 1)
+        (while (<= i l) (progn
+          (setq temp3 (wsubstr temp2 i 1))
+          (if (== temp3 (w "\""))
+            (setq flag (! flag))
+            (if flag
+              (if (== temp3 (w "#"))
+                (break)
+                nil
+              )
+              (if (== temp3 (w "\\"))
+                (setq i (++ i))
+                nil
+              )
+            )
+          )
+          (setq i (++ i))
+        ))
+        (setq info (wcat info (wcat (wrtrim (wleft temp2 (-- i))) (w " "))))
+      )
+      (setq info (wcat info (wcat temp2 (w " "))))
+    )
+  ))
+  info
+))
+
+(defun remove_comments_flp (progn
+  (setq info (walltrim $1))
+  (setq output (w ""))
+  (if (* (== (wleft info 1) (w "(")) (== (wright info 1) (w ")")))
+    (progn
+      (setq info (wsubstr info 2 (- (wlen info) 2)))
+      (setq temp1 (wlsp_head info))
+      (if (* (== (wleft temp1 1) (w "(")) (== (wright temp1 1) (w ")")))
+        (setq temp1 (remove_comments_flp temp1))
+        nil
+      )
+      (if (wat (wcat (w " ") (wcat (wupper temp1) (w " ")))
+         (w " COMMENT COMMENTS REMARK REMARKS REM "))
+        (setq output (w ""))
+        (progn
+          (setq output (wcat (w "(") temp1))
+          (setq info (wlsp_tail info))
+          (while (wlen info) (progn
+            (setq temp1 (remove_comments_flp (wlsp_head info)))
+            (setq output (wrtrim (wcat (wcat output (w " ")) temp1)))
+            (setq info (wlsp_tail info))
+          ))
+          (setq output (wcat output (w ")")))
+        )
+      )
+    )
+    (setq output info)
+  )
+  output
+))
+
+(defun concat_strings_flp (progn
+  (setq info (walltrim $1))
+  (setq output (w ""))
+  (if (* (== (wleft info 1) (w "(")) (== (wright info 1) (w ")")))
+    (progn
+      (setq temp (setq info (wsubstr info 2 (- (wlen info) 2))))
+      (setq output (w ""))
+      (while (wlen info) (progn
+        (setq temp1 (wlsp_head info))
+        (if (* (== (wleft temp1 1) (w "\"")) (== (wright temp1 1) (w "\"")))
+          (setq output (wcat output (wsubstr temp1 2 (- (wlen temp1) 2))))
+          (break)
+        )
+        (setq info (wlsp_tail info))
+      ))
+      (if (wlen info)
+        (progn
+          (setq temp1 (wlsp_head temp))
+          (setq info (wlsp_tail temp))
+          (setq output (wcat (w "(") temp1))
+          (while (wlen info) (progn
+            (setq temp1 (concat_strings_flp (wlsp_head info)))
+            (setq output (wrtrim (wcat (wcat output (w " ")) temp1)))
+            (setq info (wlsp_tail info))
+          ))
+          (setq output (wcat output (w ")")))
+        )
+        (setq output (wcat (w "\"") (wcat output (w "\""))))
+      )
+    )
+    (setq output info)
+  )
+  output
+))
+
+(defun remove_redundant_progns_flp (progn
+  (setq info (walltrim $1))
+  (setq parent_fnc (walltrim $2))
+  (setq output (w ""))
+  (if (* (== (wleft info 1) (w "(")) (== (wright info 1) (w ")")))
+    (progn
+      (setq temp (setq info (wsubstr info 2 (- (wlen info) 2))))
+      (setq temp (wlsp_head info))
+      (setq info (wlsp_tail info))
+      (setq output (w ""))
+      (while (wlen info) (progn
+        (setq temp1 (remove_redundant_progns_flp (wlsp_head info) temp))
+        (setq output (wrtrim (wcat (wcat output (w " ")) temp1)))
+        (setq info (wlsp_tail info))
+      ))
+      (if (* (== (wupper parent_fnc) (w "PROGN"))
+         (== (wupper parent_fnc) (wupper temp)))
+        (setq output (wltrim output))
+        (setq output (wcat (wcat (w "(") temp) (wcat output (w ")"))))
+      )
+    )
+    (setq output info)
+  )
+  output
+))
+
+(defun par_prep (progn
+  (setq flp_fnc (wcat (w "") $1))
+  (if (== (wleft flp_fnc 1) (w "("))
+    (progn
+      (setq flp_fnc (wsubstr flp_fnc 2 (- (wlen flp_fnc) 2)))
+      (setq fnc_name (wlsp_head flp_fnc))
+      (setq flp_fnc (wlsp_tail flp_fnc))
+      (setq parms (w ""))
+      (setq flag (w ""))
+      (while (wlen flp_fnc) (progn
+        (setq parm (par_prep (wlsp_head flp_fnc)))
+        (if (+ (== (wupper (wright parm 3)) (w "'WR"))
+           (== (wupper (wright parm 3)) (w "'RD")))
+          (if (wlen flag)
+            nil
+            (setq flag (wleftr parm 3))
+          )
+          nil
+        )
+        (setq parms (wcat parms (wcat (w " ") parm)))
+        (setq flp_fnc (wlsp_tail flp_fnc))
+      ))
+      (if (wlen flag)
+        (if (== (wupper (wright fnc_name 4)) (w "'PAR"))
+                  ##################
+          (progn  ##  USE CASE 1  ##
+                  ##################
+            (setq parms1 (setq parms2 (setq parms3 (w ""))))
+            (while (wlen parms) (progn
+              (setq parm (wlsp_head parms))
+              (setq parms (wlsp_tail parms))
+              (if (+ (== (wupper (wright parm 3)) (w "'WR"))
+                 (== (wupper (wright parm 3)) (w "'RD")))
+                (progn
+                  (setq parms1 (wcat parms1 (wcat (w " ") (wleftr parm 3))))
+                  (if (== (wupper (wright parm 3)) (w "'WR"))
+                    (progn
+                      (setq parm (wleftr parm 3))
+                      (setq parms2 (wcat parms2 (wcat (w " ") parm)))
+                    )
+                    (setq parm (wleftr parm 3))
+                  )
+                )
+                nil
+              )
+              (setq parms3 (wcat parms3 (wcat (w " ") parm)))
+            ))
+            (setq flp_fnc (w "(progn"))
+            (setq parms4 parms2)
+            (while (wlen parms2) (progn
+              (setq parm (wlsp_head parms2))
+              (setq parms2 (wlsp_tail parms2))
+              (setq flp_fnc (wcat flp_fnc (wcat (w " (setq ") (wcat parm
+                (wcat (w " (| sync_") (wcat parm
+                (wcat (w " ") (wcat parm (w "))")))))))))
+            ))
+            (setq flp_fnc (wcat flp_fnc (wcat
+              (w " (for thread 1 1 threads (setq sync_") (wcat flag (wcat
+                (w " (| sync_")
+              flag)))))
+            (setq flp_fnc (wcat flp_fnc (wcat (w " (") (wcat
+              (wleftr fnc_name 4) (wcat (w " (-- thread) threads") parms3)))))
+            (setq flp_fnc (wcat flp_fnc (w "))))")))
+            (setq parms1 (wlsp_tail parms1))
+            (while (wlen parms1) (progn
+              (setq parm (wlsp_head parms1))
+              (setq parms1 (wlsp_tail parms1))
+              (setq flp_fnc (wcat flp_fnc (wcat (w " (setq sync_") (wcat parm
+                (wcat (w " sync_") (wcat flag (w ")")))))))
+            ))
+            (while (wlen parms4) (progn
+              (setq parm (wlsp_head parms4))
+              (setq parms4 (wlsp_tail parms4))
+              (setq flp_fnc (wcat flp_fnc (wcat (w " (setq ") (wcat parm
+                (wcat (w " (| sync_") (wcat parm
+                (wcat (w " ") (wcat parm (w "))")))))))))
+            ))
+            (setq flp_fnc (wcat flp_fnc (wcat (w " sync_") (wcat flag
+              (w ")")))))
+          )
+                  ##################
+          (progn  ##  USE CASE 0  ##
+                  ##################
+            (setq flp_fnc (wcat (w "(progn (setq sync_") (wcat flag (w " ("))))
+            (setq flp_fnc (wcat flp_fnc fnc_name))
+            (setq parms1 (setq parms2 (w "")))
+            (while (wlen parms) (progn
+              (setq parm (wlsp_head parms))
+              (setq parms (wlsp_tail parms))
+              (if (+ (== (wupper (wright parm 3)) (w "'WR"))
+                 (== (wupper (wright parm 3)) (w "'RD")))
+                (progn
+                  (setq parms1 (wcat parms1 (wcat (w " ")
+                    (wleftr parm 3))))
+                  (if (== (wupper (wright parm 3)) (w "'WR"))
+                    (progn
+                      (setq parm (wleftr parm 3))
+                      (setq parms2 (wcat parms2 (wcat (w " ") parm)))
+                      (setq parm (wcat (w "(| sync_") (wcat parm (wcat (w " ")
+                        (wcat parm (w ")"))))))
+                    )
+                    (setq parm (wleftr parm 3))
+                  )
+                )
+                nil
+              )
+              (setq flp_fnc (wcat flp_fnc (wcat (w " ") parm)))
+            ))
+            (setq flp_fnc (wcat flp_fnc (w "))")))
+            (setq parms1 (wlsp_tail parms1))
+            (while (wlen parms1) (progn
+              (setq parm (wlsp_head parms1))
+              (setq parms1 (wlsp_tail parms1))
+              (setq flp_fnc (wcat flp_fnc (wcat (w " (setq sync_") (wcat parm
+                (wcat (w " sync_") (wcat flag (w ")")))))))
+            ))
+            (while (wlen parms2) (progn
+              (setq parm (wlsp_head parms2))
+              (setq parms2 (wlsp_tail parms2))
+              (setq flp_fnc (wcat flp_fnc (wcat (w " (setq ") (wcat parm
+                (wcat (w " (| sync_") (wcat parm
+                (wcat (w " ") (wcat parm (w "))")))))))))
+            ))
+            (setq flp_fnc (wcat flp_fnc (wcat (w " sync_") (wcat flag
+              (w ")")))))
+          )
+        )
+        (setq flp_fnc (wcat (w "(") (wcat fnc_name (wcat parms (w ")")))))
+      )
+    )
+    nil
+  )
+  flp_fnc
+))
+
+(defun lsp_format (progn
+  (setq info (walltrim $1))
+  (setq pos (+ 0 $2))
+  (setq width (+ 0 $3))
+  (setq output (w ""))
+  (setq temp (wspace pos))
+  (if (> (+ (wlen info) pos) width)
+    (progn
+      (if (* (== (wleft info 1) (w "(")) (== (wright info 1) (w ")")))
+        (setq temp1 (wsubstr info 2 (- (wlen info) 2)))
+        (setq temp1 info)
+      )
+      (setq temp2 (wlsp_head temp1))
+      (setq temp1 (wlsp_tail temp1))
+      (setq output (wcat temp (wcat (w "(") (wcat temp2 (w "\n")))))
+      (setq temp (wspace (+ pos 2)))
+      (while (wlen temp1) (progn
+        (setq temp2 (wlsp_head temp1))
+        (setq temp1 (wlsp_tail temp1))
+        (if (== (wleft temp2 1) (w "("))
+          (setq output (wcat output (lsp_format temp2 (+ pos 2) width)))
+          (progn
+            (setq flag 1)
+            (while (* (wlen (setq temp3 (wlsp_head temp1))) (* (!= (wleft
+               temp3 1) (w "(")) (< (+ (wlen temp3) (+ (wlen temp2) (+ pos 2)))
+               width))) (progn
+              (setq flag 0)
+              (setq temp2 (wcat temp2 (w " ")))
+              (setq temp3 (wlsp_head temp1))
+              (setq temp2 (wcat temp2 temp3))
+              (setq temp1 (wlsp_tail temp1))
+            ))
+            (if (* flag (* (* (== (wleft temp2 1) (w "\"")) (== (wright
+               temp2 1) (w "\""))) (* (> (wlen (w (str_raw (wtostr temp2))))
+               6) (> (+ (wlen temp2) (+ pos 4)) width))))
+              (progn
+                (setq output (wcat output (wcat temp (w "(\n"))))
+                (setq temp2 (w (str_raw (wtostr (wsubstr temp2 2 (- (wlen
+                  temp2) 2))))))
+                (setq m 0)
+                (while (&& (> (wlen temp2) 6) (!= m (wlen temp2))) (progn
+                  (setq m (wlen temp2))
+                  (setq l (wlen (w (str_raw (wtostr (wleft (w (str_unraw
+                    (wtostr temp2))) (- (+ width 6) pos)))))))
+                  (for i (if (< l 7) 7 l) -1 7
+                    (if (< (+ (wlen (w (str_unraw (wtostr (wleft temp2 i)))))
+                       (+ pos 7)) width)
+                      (break)
+                      nil
+                    )
+                  )
+                  (setq temp3 (wleft temp2 i))
+                  (setq temp2 (wrightl temp2 (wlen temp3)))
+                  (if (wlen temp3)
+                    (progn
+                      (setq output (wcat output (wcat (wspace (+ pos 4)) (w
+                        "\""))))
+                      (setq output (wcat output (w (str_unraw (wtostr
+                        temp3)))))
+                      (setq output (wcat output (w "\"\n")))
+                    )
+                    nil
+                  )
+                ))
+                (if (wlen temp2)
+                  (progn
+                    (setq output (wcat output (wcat (wspace (+ pos 4)) (w
+                      "\""))))
+                    (setq output (wcat output (w (str_unraw (wtostr temp2)))))
+                    (setq output (wcat output (w "\"\n")))
+                  )
+                  nil
+                )
+                (setq output (wcat output (wcat temp (w ")\n"))))
+              )
+              (setq output (wcat output (wcat temp (wcat temp2 (w "\n")))))
+            )
+          )
+        )
+      ))
+      (wcat output (wcat (wspace pos) (w ")\n")))
+    )
+    (wcat temp (wcat info (w "\n")))
+  )
+))
+
+
+####################
+##  0. Open file  ##
+####################
+(if (== (setq file_descriptor (file_open $1)) -1)
+  (progn
+    (outf (wtostr (w "*** Error while opening the file!\n")) nil)
+    (exit)
+  )
+  nil
+)
+
+####################
+##  1. Read file  ##
+####################
+(setq file_contents "")
+(while (> (len (setq get_string (file_read file_descriptor 1024))) 0)
+  (setq file_contents (cat file_contents get_string))
+)
+(file_close file_descriptor)
+(setq file_contents (w file_contents))
+
+#############################
+##  2. Filter to pure flp  ##
+#############################
+(setq lisp_code (remove_comments file_contents))
+(setq lisp_code (wcat (w "(progn ") (wcat lisp_code (w ")"))))
+(setq lisp_code (concat_strings_flp (remove_comments_flp lisp_code)))
+
+#########################
+##  3. Preprocess flp  ##
+#########################
+(setq lisp_code (remove_redundant_progns_flp (par_prep lisp_code) (w "")))
+
+########################
+##  4. Format output  ##
+########################
+(setq term_wide
+  (if (+ (== (w (user_io 0 (wtostr (w
+     "GetEnv FAST_LISP_CODE_PRINT__TERM_WIDE")))) (w "1")) (== (w (user_io 0
+     (wtostr (w "GetEnv BM_DFM_CODE_PRINT__TERM_WIDE")))) (w "1")))
+    (-- columns_term)
+    79
+  )
+)
+(wtostr (lsp_format lisp_code 0 term_wide))
+
